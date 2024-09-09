@@ -64,87 +64,87 @@ namespace cmd_vel_mux
 
 struct ParameterValues
 {
-  std::string topic;       /**< The name of the topic */
-  double timeout{-1.0};    /**< Timer's timeout, in seconds  */
-  int64_t priority{-1};    /**< UNIQUE integer from 0 (lowest priority) to MAX_INT */
-  std::string short_desc;  /**< Short description */
+    std::string topic;       /**< The name of the topic */
+    double timeout{-1.0};    /**< Timer's timeout, in seconds  */
+    int64_t priority{-1};    /**< UNIQUE integer from 0 (lowest priority) to MAX_INT */
+    std::string short_desc;  /**< Short description */
 };
 
 bool operator==(const ParameterValues & parameters1, const ParameterValues & parameters2)
 {
-  if (parameters1.topic != parameters2.topic) {
-    return false;
-  } else if (parameters1.timeout != parameters2.timeout) {
-    return false;
-  } else if (parameters1.priority != parameters2.priority) {
-    return false;
-  } else if (parameters1.short_desc != parameters2.short_desc) {
-    return false;
-  }
-  return true;
+    if (parameters1.topic != parameters2.topic) {
+        return false;
+    } else if (parameters1.timeout != parameters2.timeout) {
+        return false;
+    } else if (parameters1.priority != parameters2.priority) {
+        return false;
+    } else if (parameters1.short_desc != parameters2.short_desc) {
+        return false;
+    }
+    return true;
 }
 
 class CmdVelMux final : public rclcpp::Node
 {
 public:
-  explicit CmdVelMux(rclcpp::NodeOptions options);
-  ~CmdVelMux() override = default;
-  CmdVelMux(CmdVelMux && c) = delete;
-  CmdVelMux & operator=(CmdVelMux && c) = delete;
-  CmdVelMux(const CmdVelMux & c) = delete;
-  CmdVelMux & operator=(const CmdVelMux & c) = delete;
+    explicit CmdVelMux(rclcpp::NodeOptions options);
+    ~CmdVelMux() override = default;
+    CmdVelMux(CmdVelMux && c) = delete;
+    CmdVelMux & operator=(CmdVelMux && c) = delete;
+    CmdVelMux(const CmdVelMux & c) = delete;
+    CmdVelMux & operator=(const CmdVelMux & c) = delete;
 
 private:
-  /// ID for "nobody" active input
-  static const char * const VACANT;
+    /// ID for "nobody" active input
+    static const char * const VACANT;
 
-  /// Multiplexed command velocity topic
-  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr output_topic_pub_;
-  /// Currently allowed cmd_vel subscriber
-  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr active_subscriber_pub_;
-  rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_cb_;
+    /// Multiplexed command velocity topic
+    rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr output_topic_pub_;
+    /// Currently allowed cmd_vel subscriber
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr active_subscriber_pub_;
+    rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_cb_;
 
-  std::string allowed_;
+    std::string allowed_;
 
-  void timerCallback(const std::string & key);
-  void cmdVelCallback(
-    const std::shared_ptr<geometry_msgs::msg::Twist> msg,
-    const std::string & key);
+    void timerCallback(const std::string & key);
+    void cmdVelCallback(
+        const std::shared_ptr<geometry_msgs::msg::Twist> msg,
+        const std::string & key);
 
-  rcl_interfaces::msg::SetParametersResult parameterUpdate(
-    const std::vector<rclcpp::Parameter> & update_parameters);
+    rcl_interfaces::msg::SetParametersResult parameterUpdate(
+        const std::vector<rclcpp::Parameter> & update_parameters);
 
-  /*********************
-   ** Private Classes
-   **********************/
+    /*********************
+     ** Private Structs
+    **********************/
 
-  /**
-   * Inner class describing an individual subscriber to a cmd_vel topic
-   */
-  struct CmdVelSub final
-  {
-    /// Descriptive name; must be unique to this subscriber
-    std::string name_;
-    ParameterValues values_;
-    /// The subscriber itself
-    rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr sub_;
-    /// No incoming messages timeout
-    rclcpp::TimerBase::SharedPtr timer_;
-  };
+    /**
+     * Inner struct describing an individual subscriber to a cmd_vel topic
+     */
+    struct CmdVelSub final
+    {
+        /// Descriptive name; must be unique to this subscriber
+        std::string name_;
+        ParameterValues values_;
+        /// The subscriber itself
+        rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr sub_;
+        /// No incoming messages timeout
+        rclcpp::TimerBase::SharedPtr timer_;
+    };
 
-  bool addInputToParameterMap(
-    std::map<std::string, ParameterValues> & parsed_parameters,
-    const std::string & input_name, const std::string & parameter_name,
-    const rclcpp::Parameter & parameter_value);
-  bool parametersAreValid(
-    const std::map<std::string, ParameterValues> & parameters) const;
-  void configureFromParameters(
-    const std::map<std::string, ParameterValues> & parameters);
-  std::map<std::string, ParameterValues> parseFromParametersMap(
-    const std::map<std::string,
-    rclcpp::Parameter> & parameters);
+    bool addInputToParameterMap(
+        std::map<std::string, ParameterValues> & parsed_parameters,
+        const std::string & input_name, const std::string & parameter_name,
+        const rclcpp::Parameter & parameter_value);
+    bool parametersAreValid(
+        const std::map<std::string, ParameterValues> & parameters) const;
+    void configureFromParameters(
+        const std::map<std::string, ParameterValues> & parameters);
+    std::map<std::string, ParameterValues> parseFromParametersMap(
+        const std::map<std::string,
+        rclcpp::Parameter> & parameters);
 
-  std::map<std::string, std::shared_ptr<CmdVelSub>> map_;
+    std::map<std::string, std::shared_ptr<CmdVelSub>> map_;
 };
 
 }  // namespace cmd_vel_mux
