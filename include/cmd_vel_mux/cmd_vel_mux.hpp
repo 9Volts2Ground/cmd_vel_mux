@@ -46,7 +46,7 @@
 #include <string>
 #include <vector>
 
-#include "geometry_msgs/msg/twist.hpp"
+#include "geometry_msgs/msg/twist_stamped.hpp"
 #include "rcl_interfaces/msg/set_parameters_result.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/string.hpp"
@@ -64,10 +64,11 @@ namespace cmd_vel_mux
 
 struct ParameterValues
 {
-    std::string topic;       /**< The name of the topic */
-    double timeout{-1.0};    /**< Timer's timeout, in seconds  */
-    int64_t priority{-1};    /**< UNIQUE integer from 0 (lowest priority) to MAX_INT */
-    std::string short_desc;  /**< Short description */
+    std::string topic;      /**< The name of the topic */
+    double timeout{-1.0};   /**< Timer's timeout, in seconds  */
+    int64_t priority{-1};   /**< UNIQUE integer from 0 (lowest priority) to MAX_INT */
+    std::string short_desc; /**< Short description */
+    bool stamped;           /**< TODO: make this node flexible for twist messages with or w/out stamps */
 };
 
 bool operator==(const ParameterValues & parameters1, const ParameterValues & parameters2)
@@ -79,6 +80,8 @@ bool operator==(const ParameterValues & parameters1, const ParameterValues & par
     } else if (parameters1.priority != parameters2.priority) {
         return false;
     } else if (parameters1.short_desc != parameters2.short_desc) {
+        return false;
+    } else if (parameters1.stamped != parameters2.stamped) {
         return false;
     }
     return true;
@@ -99,7 +102,7 @@ private:
     static const char * const VACANT;
 
     /// Multiplexed command velocity topic
-    rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr output_topic_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr output_topic_pub_;
     /// Currently allowed cmd_vel subscriber
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr active_subscriber_pub_;
     rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_cb_;
@@ -108,7 +111,7 @@ private:
 
     void timerCallback(const std::string & key);
     void cmdVelCallback(
-        const std::shared_ptr<geometry_msgs::msg::Twist> msg,
+        const std::shared_ptr<geometry_msgs::msg::TwistStamped> msg,
         const std::string & key);
 
     rcl_interfaces::msg::SetParametersResult parameterUpdate(
@@ -127,7 +130,7 @@ private:
         std::string name_;
         ParameterValues values_;
         /// The subscriber itself
-        rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr sub_;
+        rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr sub_;
         /// No incoming messages timeout
         rclcpp::TimerBase::SharedPtr timer_;
     };

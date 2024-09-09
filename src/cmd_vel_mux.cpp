@@ -48,7 +48,7 @@
 #include <vector>
 
 #include "cmd_vel_mux/cmd_vel_mux.hpp"
-#include "geometry_msgs/msg/twist.hpp"
+#include "geometry_msgs/msg/twist_stamped.hpp"
 #include "rcl_interfaces/msg/set_parameters_result.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_components/register_node_macro.hpp"
@@ -96,7 +96,7 @@ CmdVelMux::CmdVelMux(rclcpp::NodeOptions options):
         add_on_set_parameters_callback(
         std::bind(&CmdVelMux::parameterUpdate, this, std::placeholders::_1));
 
-    output_topic_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 10);
+    output_topic_pub_ = this->create_publisher<geometry_msgs::msg::TwistStamped>("cmd_vel", 10);
     RCLCPP_DEBUG(get_logger(), "CmdVelMux : subscribe to output topic 'cmd_vel'");
 
     active_subscriber_pub_ = this->create_publisher<std_msgs::msg::String>(
@@ -201,9 +201,9 @@ void CmdVelMux::configureFromParameters(
         const std::string & key = m.first;
         const std::shared_ptr<CmdVelSub> & values = m.second;
         if (!values->sub_) {
-            values->sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
+            values->sub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
                 values->values_.topic, 10,
-                [this, key](const geometry_msgs::msg::Twist::SharedPtr msg) {cmdVelCallback(msg, key);});
+                [this, key](const geometry_msgs::msg::TwistStamped::SharedPtr msg) {cmdVelCallback(msg, key);});
         RCLCPP_DEBUG(
             get_logger(), "CmdVelMux : subscribed to '%s' on topic '%s'. pr: %" PRId64 ", to: %.2f",
             values->name_.c_str(), values->values_.topic.c_str(),
@@ -322,7 +322,8 @@ bool CmdVelMux::addInputToParameterMap(
 //=========================================================
 std::map<std::string, ParameterValues> CmdVelMux::parseFromParametersMap(
     const std::map<std::string,
-    rclcpp::Parameter> & parameters)
+    rclcpp::Parameter> & parameters
+)
 {
     std::map<std::string, ParameterValues> parsed_parameters;
     // Iterate over all parameters and parse their content
@@ -348,7 +349,7 @@ std::map<std::string, ParameterValues> CmdVelMux::parseFromParametersMap(
 
 //=========================================================
 void CmdVelMux::cmdVelCallback(
-    const std::shared_ptr<geometry_msgs::msg::Twist> msg,
+    const std::shared_ptr<geometry_msgs::msg::TwistStamped> msg,
     const std::string & key)
 {
     // if subscriber was deleted or the one being called right now just ignore
