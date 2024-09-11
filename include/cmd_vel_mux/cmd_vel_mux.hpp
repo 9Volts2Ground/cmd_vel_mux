@@ -116,8 +116,12 @@ private:
 
     void timerCallback(const std::string & key);
     void cmdVelCallback(
+        const std::shared_ptr<geometry_msgs::msg::Twist> msg,
+        const std::string & key);
+    void cmdVelStampedCallback(
         const std::shared_ptr<geometry_msgs::msg::TwistStamped> msg,
         const std::string & key);
+    bool checkToPublish(const std::string & key);
 
     /*********************
      ** Private Struct

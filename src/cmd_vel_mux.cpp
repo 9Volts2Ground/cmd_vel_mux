@@ -130,7 +130,7 @@ void CmdVelMux::timerCallback(
 
 //=========================================================
 void CmdVelMux::cmdVelCallback(
-    const std::shared_ptr<geometry_msgs::msg::TwistStamped> msg,
+    const std::shared_ptr<geometry_msgs::msg::Twist> msg,
     const std::string & key
 )
 {
@@ -157,7 +157,55 @@ void CmdVelMux::cmdVelCallback(
             active_subscriber_pub_->publish(std::move(active_msg));
         }
 
+        // TODO: convert this into a stamped message
+        // output_topic_pub_->publish(*msg);
+    }
+}
+
+//=========================================================
+void CmdVelMux::cmdVelStampedCallback(
+    const std::shared_ptr<geometry_msgs::msg::TwistStamped> msg,
+    const std::string & key
+)
+{
+    bool need_to_publish{ checkToPublish(key) };
+
+    if (need_to_publish){
         output_topic_pub_->publish(*msg);
+    }
+}
+
+
+//=========================================================
+bool CmdVelMux::checkToPublish(
+    const std::string & key
+)
+{
+    // If subscriber was deleted or the one being called right now just ignore
+    if (map_.count(key) == 0) {
+        return false;
+    }
+
+    // Reset timer for this source
+    map_[key]->timer_->reset();
+
+    // Give permission to publish to this source if it's the only active or is
+    // already allowed or has higher priority that the currently allowed
+    if ((allowed_ == VACANT) ||
+        (allowed_ == key) ||
+        (map_[key]->values_.priority > map_[allowed_]->values_.priority))
+    {
+        if (allowed_ != key) {
+            allowed_ = key;
+
+            // Notify the world that a new cmd_vel source took the control
+            // TODO: make this topic stamped?
+            auto active_msg = std::make_unique<std_msgs::msg::String>();
+            active_msg->data = map_[key]->name_;
+            active_subscriber_pub_->publish(std::move(active_msg));
+        }
+
+        return true;
     }
 }
 
@@ -253,14 +301,15 @@ void CmdVelMux::configureFromParameters(
         const std::shared_ptr<CmdVelSub> & values = m.second;
         if (!values->sub_) {
             values->sub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
-                values->values_.topic, 10,
-                [this, key](const geometry_msgs::msg::TwistStamped::SharedPtr msg) {cmdVelCallback(msg, key);});
+                values->values_.topic,
+                10,
+                [this, key](const geometry_msgs::msg::TwistStamped::SharedPtr msg) {cmdVelStampedCallback(msg, key);});
             RCLCPP_DEBUG(
-                get_logger(), 
+                get_logger(),
                 "CmdVelMux : subscribed to '%s' on topic '%s'. pr: %" PRId64 ", to: %.2f",
-                values->name_.c_str(), 
+                values->name_.c_str(),
                 values->values_.topic.c_str(),
-                values->values_.priority, 
+                values->values_.priority,
                 values->values_.timeout);
         }
         else {
@@ -296,10 +345,10 @@ bool CmdVelMux::addInputToParameterMap(
 
         if (parameter_value.get_type() == rclcpp::ParameterType::PARAMETER_NOT_SET) {
             topic.clear();
-        } 
+        }
         else if (parameter_value.get_type() == rclcpp::ParameterType::PARAMETER_STRING) {
             topic = parameter_value.as_string();
-        } 
+        }
         else {
             RCLCPP_WARN(get_logger(), "topic must be a string; ignoring");
             return false;
@@ -373,7 +422,7 @@ bool CmdVelMux::addInputToParameterMap(
             parsed_parameters.emplace(std::make_pair(input_name, ParameterValues()));
         }
         parsed_parameters[input_name].short_desc = short_desc;
-    } 
+    }
     //---------------------------------
     else if (parameter_name == "stamped") {
         bool stamped{true};
