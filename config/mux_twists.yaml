@@ -31,8 +31,9 @@
         #   priority:    10
         #   short_desc:  "Navigation stack remote control"
         remote_control:
-          topic:       "walking_twist/manual"
-          timeout:     0.5
-          priority:    9
-          short_desc:  "Manual control"
+          topic:        "walking_twist/manual"
+          timeout:      0.5
+          priority:     9
+          short_desc:   "Manual control"
+          stamped:      true
 

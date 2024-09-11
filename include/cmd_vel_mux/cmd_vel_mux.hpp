@@ -51,17 +51,15 @@
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/string.hpp"
 
-/*****************************************************************************
-** Namespaces
-*****************************************************************************/
-
+//=========================================================
+// Namespaces
+//=========================================================
 namespace cmd_vel_mux
 {
 
-/*****************************************************************************
- ** CmdVelMux
- *****************************************************************************/
-
+//=========================================================
+// CmdVelMux
+//=========================================================
 struct ParameterValues
 {
     std::string topic;      /**< The name of the topic */
@@ -71,7 +69,12 @@ struct ParameterValues
     bool stamped;           /**< TODO: make this node flexible for twist messages with or w/out stamps */
 };
 
-bool operator==(const ParameterValues & parameters1, const ParameterValues & parameters2)
+//=========================================================
+// Check that the parameter values are identical
+bool operator==(
+    const ParameterValues & parameters1,
+    const ParameterValues & parameters2
+)
 {
     if (parameters1.topic != parameters2.topic) {
         return false;
@@ -87,6 +90,7 @@ bool operator==(const ParameterValues & parameters1, const ParameterValues & par
     return true;
 }
 
+//=========================================================
 class CmdVelMux final : public rclcpp::Node
 {
 public:
@@ -103,6 +107,7 @@ private:
 
     /// Multiplexed command velocity topic
     rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr output_topic_pub_;
+
     /// Currently allowed cmd_vel subscriber
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr active_subscriber_pub_;
     rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_cb_;
@@ -114,11 +119,8 @@ private:
         const std::shared_ptr<geometry_msgs::msg::TwistStamped> msg,
         const std::string & key);
 
-    rcl_interfaces::msg::SetParametersResult parameterUpdate(
-        const std::vector<rclcpp::Parameter> & update_parameters);
-
     /*********************
-     ** Private Structs
+     ** Private Struct
     **********************/
 
     /**
@@ -135,17 +137,19 @@ private:
         rclcpp::TimerBase::SharedPtr timer_;
     };
 
-    bool addInputToParameterMap(
-        std::map<std::string, ParameterValues> & parsed_parameters,
-        const std::string & input_name, const std::string & parameter_name,
-        const rclcpp::Parameter & parameter_value);
     bool parametersAreValid(
         const std::map<std::string, ParameterValues> & parameters) const;
     void configureFromParameters(
         const std::map<std::string, ParameterValues> & parameters);
+    bool addInputToParameterMap(
+        std::map<std::string, ParameterValues> & parsed_parameters,
+        const std::string & input_name, const std::string & parameter_name,
+        const rclcpp::Parameter & parameter_value);
     std::map<std::string, ParameterValues> parseFromParametersMap(
         const std::map<std::string,
         rclcpp::Parameter> & parameters);
+    rcl_interfaces::msg::SetParametersResult parameterUpdate(
+        const std::vector<rclcpp::Parameter> & update_parameters);
 
     std::map<std::string, std::shared_ptr<CmdVelSub>> map_;
 };

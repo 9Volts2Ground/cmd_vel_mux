@@ -50,6 +50,7 @@ def generate_launch_description():
 
     # Remap the default topic
     remappings = []
+    remappings.append( ("active", topics().walking_twist_active))
     remappings.append( ("cmd_vel", topics().walking_twist_muxed) )
     # Overwrite the config file with system globals
     remappings.append( ("walking_twist/manual", topics().walking_twist_manual) )

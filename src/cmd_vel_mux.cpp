@@ -55,19 +55,19 @@
 #include "rcpputils/split.hpp"
 #include "std_msgs/msg/string.hpp"
 
-/*****************************************************************************
-** Namespaces
-*****************************************************************************/
-
+//=========================================================
+// Namespaces
+//=========================================================
 namespace cmd_vel_mux
 {
 
-/*****************************************************************************
- ** Implementation
- *****************************************************************************/
+//=========================================================
+// Implementation
+//=========================================================
 const char * const CmdVelMux::VACANT = "empty";
 
 //=========================================================
+// Constructor
 CmdVelMux::CmdVelMux(rclcpp::NodeOptions options):
     rclcpp::Node(
         "cmd_vel_mux",
@@ -92,8 +92,7 @@ CmdVelMux::CmdVelMux(rclcpp::NodeOptions options):
         configureFromParameters(parsed_parameters);
     }
 
-    param_cb_ =
-        add_on_set_parameters_callback(
+    param_cb_ = add_on_set_parameters_callback(
         std::bind(&CmdVelMux::parameterUpdate, this, std::placeholders::_1));
 
     output_topic_pub_ = this->create_publisher<geometry_msgs::msg::TwistStamped>("cmd_vel", 10);
@@ -108,6 +107,58 @@ CmdVelMux::CmdVelMux(rclcpp::NodeOptions options):
     active_subscriber_pub_->publish(std::move(active_msg));
 
     RCLCPP_DEBUG(get_logger(), "CmdVelMux : successfully initialized");
+}
+
+//=========================================================
+// The per-topic timerCallback is continually reset as cmd_vel messages are
+// received.  Thus, if it ever expires, then the topic hasn't published within
+// the specified timeout period and it should be removed.
+void CmdVelMux::timerCallback(
+    const std::string & key
+)
+{
+    if (allowed_ == key) {
+        // No cmd_vel messages timeout happened to currently active source, so...
+        allowed_ = VACANT;
+
+        // ...notify the world that nobody is publishing on cmd_vel; its vacant
+        auto active_msg = std::make_unique<std_msgs::msg::String>();
+        active_msg->data = "idle";
+        active_subscriber_pub_->publish(std::move(active_msg));
+    }
+}
+
+//=========================================================
+void CmdVelMux::cmdVelCallback(
+    const std::shared_ptr<geometry_msgs::msg::TwistStamped> msg,
+    const std::string & key
+)
+{
+    // if subscriber was deleted or the one being called right now just ignore
+    if (map_.count(key) == 0) {
+        return;
+    }
+
+    // Reset timer for this source
+    map_[key]->timer_->reset();
+
+    // Give permission to publish to this source if it's the only active or is
+    // already allowed or has higher priority that the currently allowed
+    if ((allowed_ == VACANT) ||
+        (allowed_ == key) ||
+        (map_[key]->values_.priority > map_[allowed_]->values_.priority))
+    {
+        if (allowed_ != key) {
+            allowed_ = key;
+
+            // Notify the world that a new cmd_vel source took the control
+            auto active_msg = std::make_unique<std_msgs::msg::String>();
+            active_msg->data = map_[key]->name_;
+            active_subscriber_pub_->publish(std::move(active_msg));
+        }
+
+        output_topic_pub_->publish(*msg);
+    }
 }
 
 //=========================================================
@@ -204,10 +255,13 @@ void CmdVelMux::configureFromParameters(
             values->sub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
                 values->values_.topic, 10,
                 [this, key](const geometry_msgs::msg::TwistStamped::SharedPtr msg) {cmdVelCallback(msg, key);});
-        RCLCPP_DEBUG(
-            get_logger(), "CmdVelMux : subscribed to '%s' on topic '%s'. pr: %" PRId64 ", to: %.2f",
-            values->name_.c_str(), values->values_.topic.c_str(),
-            values->values_.priority, values->values_.timeout);
+            RCLCPP_DEBUG(
+                get_logger(), 
+                "CmdVelMux : subscribed to '%s' on topic '%s'. pr: %" PRId64 ", to: %.2f",
+                values->name_.c_str(), 
+                values->values_.topic.c_str(),
+                values->values_.priority, 
+                values->values_.timeout);
         }
         else {
             RCLCPP_DEBUG(
@@ -228,6 +282,7 @@ void CmdVelMux::configureFromParameters(
 }
 
 //=========================================================
+// Returns false if failed to add parameter
 bool CmdVelMux::addInputToParameterMap(
     std::map<std::string, ParameterValues> & parsed_parameters,
     const std::string & input_name,
@@ -235,23 +290,28 @@ bool CmdVelMux::addInputToParameterMap(
     const rclcpp::Parameter & parameter_value
 )
 {
+    //---------------------------------
     if (parameter_name == "topic") {
         std::string topic;
 
         if (parameter_value.get_type() == rclcpp::ParameterType::PARAMETER_NOT_SET) {
-        topic.clear();
-        } else if (parameter_value.get_type() == rclcpp::ParameterType::PARAMETER_STRING) {
-        topic = parameter_value.as_string();
-        } else {
-        RCLCPP_WARN(get_logger(), "topic must be a string; ignoring");
-        return false;
+            topic.clear();
+        } 
+        else if (parameter_value.get_type() == rclcpp::ParameterType::PARAMETER_STRING) {
+            topic = parameter_value.as_string();
+        } 
+        else {
+            RCLCPP_WARN(get_logger(), "topic must be a string; ignoring");
+            return false;
         }
 
         if (parsed_parameters.count(input_name) == 0) {
-        parsed_parameters.emplace(std::make_pair(input_name, ParameterValues()));
+            // Have not already added this parameter, add it now
+            parsed_parameters.emplace(std::make_pair(input_name, ParameterValues()));
         }
         parsed_parameters[input_name].topic = topic;
     }
+    //---------------------------------
     else if (parameter_name == "timeout") {
         double timeout{-1.0};
 
@@ -271,6 +331,7 @@ bool CmdVelMux::addInputToParameterMap(
         }
         parsed_parameters[input_name].timeout = timeout;
     }
+    //---------------------------------
     else if (parameter_name == "priority") {
         int64_t priority{-1};
 
@@ -294,6 +355,7 @@ bool CmdVelMux::addInputToParameterMap(
         }
         parsed_parameters[input_name].priority = priority;
     }
+    //---------------------------------
     else if (parameter_name == "short_desc") {
         std::string short_desc;
         if (parameter_value.get_type() == rclcpp::ParameterType::PARAMETER_NOT_SET) {
@@ -311,7 +373,29 @@ bool CmdVelMux::addInputToParameterMap(
             parsed_parameters.emplace(std::make_pair(input_name, ParameterValues()));
         }
         parsed_parameters[input_name].short_desc = short_desc;
-    } else {
+    } 
+    //---------------------------------
+    else if (parameter_name == "stamped") {
+        bool stamped{true};
+
+        if (parameter_value.get_type() == rclcpp::ParameterType::PARAMETER_NOT_SET) {
+            stamped = true;
+        }
+        else if (parameter_value.get_type() == rclcpp::ParameterType::PARAMETER_BOOL) {
+            stamped = parameter_value.as_bool();
+        }
+        else {
+            RCLCPP_WARN(get_logger(), "stamped must be a bool; ignoring");
+            return false;
+        }
+
+        if (parsed_parameters.count(input_name) == 0) {
+            parsed_parameters.emplace(std::make_pair(input_name, ParameterValues()));
+        }
+        parsed_parameters[input_name].stamped = stamped;
+    }
+    //---------------------------------
+    else {
         RCLCPP_WARN(get_logger(), "Invalid input variable '%s'; ignored", parameter_name.c_str());
         return false;
     }
@@ -339,63 +423,13 @@ std::map<std::string, ParameterValues> CmdVelMux::parseFromParametersMap(
         const std::string & parameter_name = splits[1];
         const rclcpp::Parameter & parameter_value = parameter.second;
         if (!addInputToParameterMap(parsed_parameters, input_name, parameter_name, parameter_value)) {
+            // Failed to add this parameter
             parsed_parameters.clear();
             break;
         }
     }
 
     return parsed_parameters;
-}
-
-//=========================================================
-void CmdVelMux::cmdVelCallback(
-    const std::shared_ptr<geometry_msgs::msg::TwistStamped> msg,
-    const std::string & key)
-{
-    // if subscriber was deleted or the one being called right now just ignore
-    if (map_.count(key) == 0) {
-        return;
-    }
-
-    // Reset timer for this source
-    map_[key]->timer_->reset();
-
-    // Give permit to publish to this source if it's the only active or is
-    // already allowed or has higher priority that the currently allowed
-    if ((allowed_ == VACANT) ||
-        (allowed_ == key) ||
-        (map_[key]->values_.priority > map_[allowed_]->values_.priority))
-    {
-        if (allowed_ != key) {
-            allowed_ = key;
-
-            // Notify the world that a new cmd_vel source took the control
-            auto active_msg = std::make_unique<std_msgs::msg::String>();
-            active_msg->data = map_[key]->name_;
-            active_subscriber_pub_->publish(std::move(active_msg));
-        }
-
-        output_topic_pub_->publish(*msg);
-    }
-}
-
-//=========================================================
-// The per-topic timerCallback is continually reset as cmd_vel messages are
-// received.  Thus, if it ever expires, then the topic hasn't published within
-// the specified timeout period and it should be removed.
-void CmdVelMux::timerCallback(
-    const std::string & key
-)
-{
-    if (allowed_ == key) {
-        // No cmd_vel messages timeout happened to currently active source, so...
-        allowed_ = VACANT;
-
-        // ...notify the world that nobody is publishing on cmd_vel; its vacant
-        auto active_msg = std::make_unique<std_msgs::msg::String>();
-        active_msg->data = "idle";
-        active_subscriber_pub_->publish(std::move(active_msg));
-    }
 }
 
 //=========================================================
