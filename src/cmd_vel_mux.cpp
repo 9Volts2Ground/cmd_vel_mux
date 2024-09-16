@@ -70,7 +70,7 @@ const char * const CmdVelMux::VACANT = "empty";
 // Constructor
 CmdVelMux::CmdVelMux(rclcpp::NodeOptions options):
     rclcpp::Node(
-        "cmd_vel_mux",
+        "cmd_vel_mux_node",
         options.allow_undeclared_parameters(true).automatically_declare_parameters_from_overrides(true)
     ),
     allowed_(VACANT)
@@ -92,11 +92,12 @@ CmdVelMux::CmdVelMux(rclcpp::NodeOptions options):
         configureFromParameters(parsed_parameters);
     }
 
+    // Update our parameters if they get changed at runtime
     param_cb_ = add_on_set_parameters_callback(
         std::bind(&CmdVelMux::parameterUpdate, this, std::placeholders::_1));
 
     output_topic_pub_ = this->create_publisher<geometry_msgs::msg::TwistStamped>("cmd_vel", 10);
-    RCLCPP_DEBUG(get_logger(), "CmdVelMux : subscribe to output topic 'cmd_vel'");
+    RCLCPP_DEBUG(get_logger(), "CmdVelMux : publish to output topic 'cmd_vel'");
 
     active_subscriber_pub_ = this->create_publisher<std_msgs::msg::String>(
         "active", rclcpp::QoS(1).transient_local());    // latched topic
@@ -134,31 +135,10 @@ void CmdVelMux::cmdVelCallback(
     const std::string & key
 )
 {
-    // if subscriber was deleted or the one being called right now just ignore
-    if (map_.count(key) == 0) {
-        return;
-    }
-
-    // Reset timer for this source
-    map_[key]->timer_->reset();
-
-    // Give permission to publish to this source if it's the only active or is
-    // already allowed or has higher priority that the currently allowed
-    if ((allowed_ == VACANT) ||
-        (allowed_ == key) ||
-        (map_[key]->values_.priority > map_[allowed_]->values_.priority))
-    {
-        if (allowed_ != key) {
-            allowed_ = key;
-
-            // Notify the world that a new cmd_vel source took the control
-            auto active_msg = std::make_unique<std_msgs::msg::String>();
-            active_msg->data = map_[key]->name_;
-            active_subscriber_pub_->publish(std::move(active_msg));
-        }
-
+    if ( checkToPublish(key) ){
         // TODO: convert this into a stamped message
         // output_topic_pub_->publish(*msg);
+        RCLCPP_INFO(get_logger(), "need to publish non-stamped twist"); // SAS just for debugging
     }
 }
 
@@ -168,9 +148,7 @@ void CmdVelMux::cmdVelStampedCallback(
     const std::string & key
 )
 {
-    bool need_to_publish{ checkToPublish(key) };
-
-    if (need_to_publish){
+    if ( checkToPublish(key) ){
         output_topic_pub_->publish(*msg);
     }
 }
@@ -207,6 +185,35 @@ bool CmdVelMux::checkToPublish(
 
         return true;
     }
+}
+
+//=========================================================
+std::map<std::string, ParameterValues> CmdVelMux::parseFromParametersMap(
+    const std::map<std::string,
+    rclcpp::Parameter> & parameters
+)
+{
+    std::map<std::string, ParameterValues> parsed_parameters;
+    // Iterate over all parameters and parse their content
+    for (const std::pair<const std::string, rclcpp::Parameter> & parameter : parameters) {
+        std::vector<std::string> splits = rcpputils::split(parameter.first, '.');
+        if (splits.size() != 2) {
+            RCLCPP_WARN(
+                get_logger(), "Invalid or unknown parameter '%s', ignoring", parameter.first.c_str());
+            continue;
+        }
+
+        const std::string & input_name = splits[0];
+        const std::string & parameter_name = splits[1];
+        const rclcpp::Parameter & parameter_value = parameter.second;
+        if (!addInputToParameterMap(parsed_parameters, input_name, parameter_name, parameter_value)) {
+            // Failed to add this parameter
+            parsed_parameters.clear();
+            break;
+        }
+    }
+
+    return parsed_parameters;
 }
 
 //=========================================================
@@ -249,11 +256,11 @@ void CmdVelMux::configureFromParameters(
     const std::map<std::string, ParameterValues> & parameters
 )
 {
-    std::map<std::string, std::shared_ptr<CmdVelSub>> new_map;
+    std::map<std::string, std::shared_ptr<CmdVelProperties>> new_map;
 
     for (const std::pair<const std::string, ParameterValues> & parameter : parameters) {
-        const std::string & key = parameter.first;
-        const ParameterValues & parameter_values = parameter.second;
+        const std::string & key{ parameter.first };
+        const ParameterValues & parameter_values{ parameter.second };
         // Check if parameter subscriber has all its necessary values
         if (map_.count(key) != 0) {
             // For names already in the subscribers map, retain current
@@ -261,20 +268,26 @@ void CmdVelMux::configureFromParameters(
             new_map[key] = map_[key];
         }
         else {
-            new_map[key] = std::make_shared<CmdVelSub>();
+            new_map[key] = std::make_shared<CmdVelProperties>();
         }
 
         // update existing or new object with the new configuration
         new_map[key]->name_ = key;
         new_map[key]->values_.priority = parameter_values.priority;
         new_map[key]->values_.short_desc = parameter_values.short_desc;
+        new_map[key]->values_.stamped = parameter_values.stamped;
 
         if (parameter_values.topic != new_map[key]->values_.topic) {
             // Shutdown the topic if the name has changed so it gets recreated
             // on configuration reload. In the case of new subscribers, topic
             // is empty and shutdown has just no effect
             new_map[key]->values_.topic = parameter_values.topic;
-            new_map[key]->sub_ = nullptr;
+            if (map_stamped_subs_.count(key) != 0){
+                map_stamped_subs_[key] = nullptr;
+            }
+            if (map_subs_.count(key) != 0){
+                map_subs_[key] = nullptr;
+            }
         }
 
         if (parameter_values.timeout != new_map[key]->values_.timeout) {
@@ -296,21 +309,40 @@ void CmdVelMux::configureFromParameters(
     map_ = new_map;
 
     // (Re)create subscribers whose topic is invalid: new ones and those with changed names
-    for (std::pair<const std::string, std::shared_ptr<CmdVelSub>> & m : map_) {
+    for (std::pair<const std::string, std::shared_ptr<CmdVelProperties>> & m : map_) {
         const std::string & key = m.first;
-        const std::shared_ptr<CmdVelSub> & values = m.second;
-        if (!values->sub_) {
-            values->sub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
+        const std::shared_ptr<CmdVelProperties> & values = m.second;
+
+        bool sub_created{ false };
+
+        if (values->values_.stamped){
+            if (!map_stamped_subs_[key]){
+                map_stamped_subs_[key] = this->create_subscription<geometry_msgs::msg::TwistStamped>(
                 values->values_.topic,
                 10,
                 [this, key](const geometry_msgs::msg::TwistStamped::SharedPtr msg) {cmdVelStampedCallback(msg, key);});
+                sub_created = true;
+            }
+        }
+        else {
+            if (!map_subs_[key]){
+                map_subs_[key] = this->create_subscription<geometry_msgs::msg::Twist>(
+                values->values_.topic,
+                10,
+                [this, key](const geometry_msgs::msg::Twist::SharedPtr msg) {cmdVelCallback(msg, key);});
+                sub_created = true;
+            }
+        }
+
+        if (sub_created){
             RCLCPP_DEBUG(
                 get_logger(),
                 "CmdVelMux : subscribed to '%s' on topic '%s'. pr: %" PRId64 ", to: %.2f",
                 values->name_.c_str(),
                 values->values_.topic.c_str(),
                 values->values_.priority,
-                values->values_.timeout);
+                values->values_.timeout
+                );
         }
         else {
             RCLCPP_DEBUG(
@@ -425,7 +457,7 @@ bool CmdVelMux::addInputToParameterMap(
     }
     //---------------------------------
     else if (parameter_name == "stamped") {
-        bool stamped{true};
+        bool stamped{true}; // Assume true to start
 
         if (parameter_value.get_type() == rclcpp::ParameterType::PARAMETER_NOT_SET) {
             stamped = true;
@@ -450,35 +482,6 @@ bool CmdVelMux::addInputToParameterMap(
     }
 
     return true;
-}
-
-//=========================================================
-std::map<std::string, ParameterValues> CmdVelMux::parseFromParametersMap(
-    const std::map<std::string,
-    rclcpp::Parameter> & parameters
-)
-{
-    std::map<std::string, ParameterValues> parsed_parameters;
-    // Iterate over all parameters and parse their content
-    for (const std::pair<const std::string, rclcpp::Parameter> & parameter : parameters) {
-        std::vector<std::string> splits = rcpputils::split(parameter.first, '.');
-        if (splits.size() != 2) {
-            RCLCPP_WARN(
-                get_logger(), "Invalid or unknown parameter '%s', ignoring", parameter.first.c_str());
-            continue;
-        }
-
-        const std::string & input_name = splits[0];
-        const std::string & parameter_name = splits[1];
-        const rclcpp::Parameter & parameter_value = parameter.second;
-        if (!addInputToParameterMap(parsed_parameters, input_name, parameter_name, parameter_value)) {
-            // Failed to add this parameter
-            parsed_parameters.clear();
-            break;
-        }
-    }
-
-    return parsed_parameters;
 }
 
 //=========================================================

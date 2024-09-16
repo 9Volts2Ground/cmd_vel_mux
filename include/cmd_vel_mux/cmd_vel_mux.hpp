@@ -69,6 +69,17 @@ struct ParameterValues
     bool stamped;           /**< TODO: make this node flexible for twist messages with or w/out stamps */
 };
 
+//-------------------------------------
+struct CmdVelProperties final
+    {
+        /// Descriptive name; must be unique to this subscriber
+        std::string name_;
+        ParameterValues values_;
+        /// The subscriber itself
+        /// No incoming messages timeout
+        rclcpp::TimerBase::SharedPtr timer_;
+    };
+
 //=========================================================
 // Check that the parameter values are identical
 bool operator==(
@@ -123,24 +134,9 @@ private:
         const std::string & key);
     bool checkToPublish(const std::string & key);
 
-    /*********************
-     ** Private Struct
-    **********************/
-
-    /**
-     * Inner struct describing an individual subscriber to a cmd_vel topic
-     */
-    struct CmdVelSub final
-    {
-        /// Descriptive name; must be unique to this subscriber
-        std::string name_;
-        ParameterValues values_;
-        /// The subscriber itself
-        rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr sub_;
-        /// No incoming messages timeout
-        rclcpp::TimerBase::SharedPtr timer_;
-    };
-
+    std::map<std::string, ParameterValues> parseFromParametersMap(
+        const std::map<std::string,
+        rclcpp::Parameter> & parameters);
     bool parametersAreValid(
         const std::map<std::string, ParameterValues> & parameters) const;
     void configureFromParameters(
@@ -149,13 +145,12 @@ private:
         std::map<std::string, ParameterValues> & parsed_parameters,
         const std::string & input_name, const std::string & parameter_name,
         const rclcpp::Parameter & parameter_value);
-    std::map<std::string, ParameterValues> parseFromParametersMap(
-        const std::map<std::string,
-        rclcpp::Parameter> & parameters);
     rcl_interfaces::msg::SetParametersResult parameterUpdate(
         const std::vector<rclcpp::Parameter> & update_parameters);
 
-    std::map<std::string, std::shared_ptr<CmdVelSub>> map_;
+    std::map<std::string, std::shared_ptr<CmdVelProperties>> map_;
+    std::map<std::string, rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr> map_subs_;
+    std::map<std::string, rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr> map_stamped_subs_;
 };
 
 }  // namespace cmd_vel_mux
