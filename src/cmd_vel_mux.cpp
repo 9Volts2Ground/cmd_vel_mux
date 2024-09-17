@@ -136,9 +136,15 @@ void CmdVelMux::cmdVelCallback(
 )
 {
     if ( checkToPublish(key) ){
-        // TODO: convert this into a stamped message
-        // output_topic_pub_->publish(*msg);
-        RCLCPP_INFO(get_logger(), "need to publish non-stamped twist"); // SAS just for debugging
+        // Convert this into a stamped message
+        geometry_msgs::msg::TwistStamped msg_stamped;
+        msg_stamped.twist = *msg;
+
+        // Add stamped properties
+        msg_stamped.header.stamp = rclcpp::Clock(RCL_ROS_TIME).now();
+        msg_stamped.header.frame_id = ""; // TODO
+
+        output_topic_pub_->publish(msg_stamped);
     }
 }
 
@@ -185,6 +191,7 @@ bool CmdVelMux::checkToPublish(
 
         return true;
     }
+    return false;
 }
 
 //=========================================================
