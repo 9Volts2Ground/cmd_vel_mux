@@ -76,16 +76,19 @@ CmdVelMux::CmdVelMux(rclcpp::NodeOptions options):
     allowed_(VACANT),
     frame_id_default_("")
 {
-    // // Check for a default frame for the output topic
-    frame_id_default_ = this->get_parameter("default_frame").as_string();
+    // Check for a default frame for the output topic
+    if (!get_parameter("default_frame", frame_id_default_) ) {
+        RCLCPP_WARN(get_logger(), "No default frame configured!");
+    }
 
-    std::map<std::string, rclcpp::Parameter> subscriber_param_map;
+
     // Check if there are loaded parameters from config file besides sim_time_used
-    if (!get_parameters("subscribers", subscriber_param_map) || subscriber_param_map.size() < 1) {
+    std::map<std::string, rclcpp::Parameter> param_map;
+    if (!get_parameters("subscribers", param_map) || param_map.size() < 1) {
         RCLCPP_WARN(get_logger(), "No subscribers configured!");
     }
     else {
-        std::map<std::string, ParameterValues> parsed_parameters = parseFromParametersMap(subscriber_param_map);
+        std::map<std::string, ParameterValues> parsed_parameters = parseFromParametersMap(param_map);
         if (parsed_parameters.empty()) {
             // We ran into some kind of error while configuring, quit
             throw std::runtime_error("Invalid parameters");
@@ -187,7 +190,6 @@ bool CmdVelMux::checkToPublish(
             allowed_ = key;
 
             // Notify the world that a new cmd_vel source took the control
-            // TODO: make this topic stamped?
             auto active_msg = std::make_unique<std_msgs::msg::String>();
             active_msg->data = map_[key]->name_;
             active_subscriber_pub_->publish(std::move(active_msg));
