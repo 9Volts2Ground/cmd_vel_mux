@@ -73,15 +73,19 @@ CmdVelMux::CmdVelMux(rclcpp::NodeOptions options):
         "cmd_vel_mux_node",
         options.allow_undeclared_parameters(true).automatically_declare_parameters_from_overrides(true)
     ),
-    allowed_(VACANT)
+    allowed_(VACANT),
+    frame_id_default_("")
 {
-    std::map<std::string, rclcpp::Parameter> parameters;
+    // // Check for a default frame for the output topic
+    frame_id_default_ = this->get_parameter("default_frame").as_string();
+
+    std::map<std::string, rclcpp::Parameter> subscriber_param_map;
     // Check if there are loaded parameters from config file besides sim_time_used
-    if (!get_parameters("subscribers", parameters) || parameters.size() < 1) {
+    if (!get_parameters("subscribers", subscriber_param_map) || subscriber_param_map.size() < 1) {
         RCLCPP_WARN(get_logger(), "No subscribers configured!");
     }
     else {
-        std::map<std::string, ParameterValues> parsed_parameters = parseFromParametersMap(parameters);
+        std::map<std::string, ParameterValues> parsed_parameters = parseFromParametersMap(subscriber_param_map);
         if (parsed_parameters.empty()) {
             // We ran into some kind of error while configuring, quit
             throw std::runtime_error("Invalid parameters");
@@ -142,7 +146,7 @@ void CmdVelMux::cmdVelCallback(
 
         // Add stamped properties
         msg_stamped.header.stamp = rclcpp::Clock(RCL_ROS_TIME).now();
-        msg_stamped.header.frame_id = ""; // TODO
+        msg_stamped.header.frame_id = frame_id_default_;
 
         output_topic_pub_->publish(msg_stamped);
     }

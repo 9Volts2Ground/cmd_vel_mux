@@ -124,6 +124,7 @@ private:
     rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_cb_;
 
     std::string allowed_;
+    std::string frame_id_default_;
 
     void timerCallback(const std::string & key);
     void cmdVelCallback(

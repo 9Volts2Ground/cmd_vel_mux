@@ -14,6 +14,7 @@
 
 /**:
   ros__parameters:
+    default_frame: "ground"
     subscribers:
         # default_input:
         #   topic:       "input/default"
