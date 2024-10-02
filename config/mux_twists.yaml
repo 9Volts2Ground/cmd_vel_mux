@@ -34,7 +34,7 @@
           stamped:      true
         keyboard_control:
           topic:        "walking_twist/keyboard"
-          timeout:      0.5
+          timeout:      0.75
           priority:     10
           short_desc:   "Manual control via keyboard"
           stamped:      true
