@@ -26,15 +26,16 @@
         #   timeout:     0.5
         #   priority:    1
         #   short_desc:  "Navigation stack controller"
-        # navigation_stack_controller:
-        #   topic:       "input/joystick"
-        #   timeout:     0.1
-        #   priority:    10
-        #   short_desc:  "Navigation stack remote control"
         remote_control:
           topic:        "walking_twist/manual"
           timeout:      0.5
           priority:     9
-          short_desc:   "Manual control"
+          short_desc:   "Manual control via game pad"
+          stamped:      true
+        keyboard_control:
+          topic:        "walking_twist/keyboard"
+          timeout:      0.75
+          priority:     10
+          short_desc:   "Manual control via keyboard"
           stamped:      true
 
