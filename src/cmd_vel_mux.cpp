@@ -372,7 +372,7 @@ void CmdVelMux::configureFromParameters(
         }
     }
 
-    RCLCPP_INFO(get_logger(), "CmdVelMux : (re)configured");
+    RCLCPP_INFO_SKIPFIRST(get_logger(), "CmdVelMux : (re)configured");
 }
 
 //=========================================================
